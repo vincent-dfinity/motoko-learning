@@ -1,0 +1,16 @@
+{
+  "canisters": {
+    "trap_commit_backend": {
+      "main": "src/trap_commit_backend/main.mo",
+      "type": "motoko"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
