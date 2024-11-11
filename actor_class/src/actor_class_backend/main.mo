@@ -1,6 +1,9 @@
 import Array "mo:base/Array";
 import Buckets "Buckets";
 import Cycles "mo:base/ExperimentalCycles";
+import IC "mo:base/ExperimentalInternetComputer";
+import List "mo:base/List";
+import Principal "mo:base/Principal";
 
 actor Map {
   let num = 8; // Number of buckets.
@@ -11,6 +14,11 @@ actor Map {
   type Bucket = Buckets.Bucket;
 
   let buckets : [var ?Bucket] = Array.init(num, null);
+  var principals = List.nil<Principal>();
+
+  public func whoami() : async Principal {
+    return Principal.fromActor(Map);
+  };
 
   public func get(key : Key) : async ?Value {
     switch(buckets[key % num]) {
@@ -35,5 +43,21 @@ actor Map {
     };
 
     await bucket.put(key, value);
+
+    let principal = Principal.fromActor(bucket);
+    principals := List.push(principal, principals);
   };
+
+  public func controlledPrincipals() : async [Principal] {
+    return List.toArray(principals);
+  };  
+
+  // TODO: Revisit this while working on inter-canister calls.
+  // public func addController(canisterId: Principal, controller: Principal) : async () {
+  //   let controllers : ?[Principal] = ?[canisterId, Principal.fromActor(Map)];
+
+  //   await IC.update_settings(({ canister_id = canisterId; settings = {
+  //     controllers = controllers;
+  //   }}))
+  // }
 };
