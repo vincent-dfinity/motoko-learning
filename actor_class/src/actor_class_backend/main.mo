@@ -1,7 +1,6 @@
 import Array "mo:base/Array";
 import Buckets "Buckets";
 import Cycles "mo:base/ExperimentalCycles";
-import IC "mo:base/ExperimentalInternetComputer";
 import List "mo:base/List";
 import Principal "mo:base/Principal";
 
@@ -50,14 +49,33 @@ actor Map {
 
   public func controlledPrincipals() : async [Principal] {
     return List.toArray(principals);
-  };  
+  };
 
-  // TODO: Revisit this while working on inter-canister calls.
-  // public func addController(canisterId: Principal, controller: Principal) : async () {
-  //   let controllers : ?[Principal] = ?[canisterId, Principal.fromActor(Map)];
+  public type canister_settings = {
+    controllers : ? [Principal];
+    compute_allocation : ?Nat;
+    memory_allocation : ?Nat;
+    freezing_threshold : ?Nat;
+  };
 
-  //   await IC.update_settings(({ canister_id = canisterId; settings = {
-  //     controllers = controllers;
-  //   }}))
-  // }
+  public type IC = actor {
+    update_settings : { 
+      canister_id : Principal;
+      settings : canister_settings;
+    } -> async ();
+  };
+
+  let ic : IC = actor("aaaaa-aa");
+
+  public func addController(canisterId: Principal, controller: Principal) : async () {
+    let controllers : [Principal] = [controller, Principal.fromActor(Map)];
+    let settings : canister_settings =  {
+      controllers = ?controllers;
+      compute_allocation = null;
+      memory_allocation = null;
+      freezing_threshold = null;
+    };
+
+    await ic.update_settings({ canister_id = canisterId; settings})
+  };
 };
