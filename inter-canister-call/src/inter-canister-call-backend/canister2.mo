@@ -7,8 +7,8 @@ actor Canister2 {
         num := value;
     };
 
-    public func getValue() : async Nat {
+    public query func getValue() : async Nat {
         Debug.print("Hello from canister 2!");
-        num;
+        return num;
     };
 }
