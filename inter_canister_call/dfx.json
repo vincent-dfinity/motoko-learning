@@ -1,11 +1,11 @@
 {
   "canisters": {
     "Main": {
-      "main": "src/inter-canister-call-backend/main.mo",
+      "main": "src/inter_canister_call_backend/main.mo",
       "type": "motoko"
     },
     "canister2": {
-      "main": "src/inter-canister-call-backend/canister2.mo",
+      "main": "src/inter_canister_call_backend/canister2.mo",
       "type": "motoko"
     }
   },
