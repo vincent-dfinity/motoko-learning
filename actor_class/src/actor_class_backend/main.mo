@@ -1,7 +1,7 @@
 import Array "mo:base/Array";
 import Buckets "Buckets";
+import Buffer "mo:base/Buffer";
 import Cycles "mo:base/ExperimentalCycles";
-import List "mo:base/List";
 import Principal "mo:base/Principal";
 
 actor Map {
@@ -13,7 +13,7 @@ actor Map {
   type Bucket = Buckets.Bucket;
 
   let buckets : [var ?Bucket] = Array.init(num, null);
-  var principals = List.nil<Principal>();
+  let principals = Buffer.Buffer<Principal>(0);
 
   public func whoami() : async Principal {
     return Principal.fromActor(Map);
@@ -44,11 +44,11 @@ actor Map {
     await bucket.put(key, value);
 
     let principal = Principal.fromActor(bucket);
-    principals := List.push(principal, principals);
+    principals.add(principal);
   };
 
   public func controlledPrincipals() : async [Principal] {
-    return List.toArray(principals);
+    return Buffer.toArray(principals);
   };
 
   public type canister_settings = {
