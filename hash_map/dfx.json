@@ -1,0 +1,16 @@
+{
+  "canisters": {
+    "hash_map_backend": {
+      "main": "src/hash_map_backend/main.mo",
+      "type": "motoko"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
