@@ -80,8 +80,8 @@ actor {
     public type FilterBy = {
       #ByName : Text;
       #ByDescription : Text;
-      #ByProposer: Principal;
-      // Could add more filters like 
+      #ByProposer : Principal;
+      #ByVotes : Nat;
     };
 
     public func filterBooks(filter : FilterBy) : Result<[BookResult], Text> {
@@ -105,13 +105,19 @@ actor {
             else
               return null
           };
+          case (#ByVotes(votes)) {
+            if (val.votes >= votes)
+              return ?toBookResult(val)
+            else
+              return null
+          };
         }
       };
 
       let newMap = bookMap.mapFilter(books, bookFilter);
 
       if (bookMap.size(newMap) == 0) {
-        return #err("Book with " # debug_show(filter) # " does not exist.")
+        return #err("No book meets " # debug_show(filter) # ".")
       };
 
       #ok(Iter.toArray(bookMap.vals(newMap)))
@@ -134,12 +140,14 @@ actor {
     public type User = {
       principal : Principal;
       var proposedBooks : Set.Set<Nat>;
+      var votedBooks : Set.Set<Nat>;
       var progressTracking : Map.Map<Nat, Nat8>;
     };
 
     public type UserResult = {
       principal : Principal;
       proposedBooks : [Nat];
+      votedBooks : [Nat];
       progressTracking : [ReadingProgress];
     };
 
@@ -149,6 +157,7 @@ actor {
           {
             principal = principal;
             var proposedBooks = bookSet.empty();
+            var votedBooks = bookSet.empty();
             var progressTracking = progressMap.empty<Nat8>();
           }
         };
@@ -172,6 +181,7 @@ actor {
       {
         principal = user.principal;
         proposedBooks = Iter.toArray(bookSet.vals(user.proposedBooks));
+        votedBooks = Iter.toArray(bookSet.vals(user.votedBooks));
         progressTracking = Iter.toArray(progressMap.vals(resMap));
       }
     }
@@ -214,7 +224,6 @@ actor {
     let newBook = BookModule.initializeBook(book, caller);
     books := bookMap.put(books, newBook.id, newBook);
 
-    // Register user.
     let user = UserModule.getOrInitializeUser(caller);
     user.proposedBooks := bookSet.put(user.proposedBooks, newBook.id);
     users := userMap.put(users, caller, user);
@@ -241,23 +250,47 @@ actor {
     BookModule.filterBooks(#ByProposer(proposer))
   };
 
-  public shared ({ caller }) func voteOnBook(id : Nat) : async Result<Bool, Text> {
+  public query func getBooksByVotes(votes : Nat) : async Result<[BookResult], Text> {
+    BookModule.filterBooks(#ByVotes(votes))
+  };
+
+  public shared ({ caller }) func voteOnBook(bookId : Nat) : async Result<(), Text> {
     if (Principal.isAnonymous(caller)) {
       return #err("An anonymous user is not allowed to vote.");
     };
 
-    switch(bookMap.get(books, id)) {
-      case null #err("Book with id " # Nat.toText(id) # " does not exist.");
-      case (?book) {
-        // TODO: Check if the caller has already voted.
-        // Also support unvote.
-        book.votes += 1;
-        #ok(true)
-      };
+    let ?book = bookMap.get(books, bookId) else return #err("Book with id " # Nat.toText(bookId) # " does not exist.");
+
+    let user = UserModule.getOrInitializeUser(caller);
+    if (bookSet.contains((user.votedBooks, bookId))) {
+      return #err("You have already voted for book " # Nat.toText(bookId) # ".");
     };
+
+    book.votes += 1;
+    user.votedBooks := bookSet.put(user.votedBooks, bookId);
+
+    #ok()
   };
 
-  public shared ({ caller }) func commentOnBook(comment : PostComment) : async Result<Bool, Text> {
+  public shared ({ caller }) func unvoteOnBook(bookId : Nat) : async Result<(), Text> {
+    if (Principal.isAnonymous(caller)) {
+      return #err("An anonymous user is not allowed to unvote.");
+    };
+
+    let ?book = bookMap.get(books, bookId) else return #err("Book with id " # Nat.toText(bookId) # " does not exist.");
+
+    let user = UserModule.getOrInitializeUser(caller);
+    if (not bookSet.contains((user.votedBooks, bookId))) {
+      return #err("You have not voted for book " # Nat.toText(bookId) # ".");
+    };
+
+    book.votes -= 1;
+    user.votedBooks := bookSet.delete(user.votedBooks, bookId);
+
+    #ok()
+  };
+
+  public shared ({ caller }) func commentOnBook(comment : PostComment) : async Result<(), Text> {
     if (Principal.isAnonymous(caller)) {
       return #err("An anonymous user is not allowed to comment.");
     };
@@ -266,7 +299,7 @@ actor {
     let newComment = CommentModule.initializeComment(comment, caller);
     book.comments := commentMap.put(book.comments, newComment.id, newComment);
 
-    #ok(true)
+    #ok()
   };
 
   public query func getUserByPrincipal(principal : Principal) : async Result<UserResult, Text> {
@@ -275,7 +308,7 @@ actor {
     #ok(UserModule.toUserResult(user))
   };
 
-  public shared ({ caller }) func updateReadingProgressOnBook(progress : ReadingProgress) : async Result<Bool, Text> {
+  public shared ({ caller }) func updateReadingProgressOnBook(progress : ReadingProgress) : async Result<(), Text> {
     if (Principal.isAnonymous(caller)) {
       return #err("An anonymous user is not allowed to update reading progress.");
     };
@@ -283,6 +316,6 @@ actor {
     let user = UserModule.getOrInitializeUser(caller);
     user.progressTracking := progressMap.put(user.progressTracking, progress.bookId, progress.progress);
 
-    #ok(true)
+    #ok()
   };
 };
