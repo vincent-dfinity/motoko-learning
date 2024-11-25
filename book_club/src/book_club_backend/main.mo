@@ -5,6 +5,7 @@ import Nat "mo:base/Nat";
 import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Text "mo:base/Text";
+import Nat8 "mo:base/Nat8";
 
 actor {
   type Result<T, E> = Result.Result<T, E>;
@@ -14,7 +15,9 @@ actor {
   type FilterBy = BookModule.FilterBy;
   type ProposeBook = BookModule.ProposeBook;
 
+  type ReadingProgress = UserModule.ReadingProgress;
   type User = UserModule.User;
+  type UserResult = UserModule.UserResult;
 
   type Comment = CommentModule.Comment;
   type PostComment = CommentModule.PostComment;
@@ -31,7 +34,7 @@ actor {
       name : Text;
       description : Text;
       proposer : Principal;
-      var thumbUp : Nat;
+      var votes : Nat;
       var comments : Map.Map<Nat, Comment>;
     };
 
@@ -40,7 +43,7 @@ actor {
       name : Text;
       description : Text;
       proposer : Principal;
-      thumbUp : Nat;
+      votes : Nat;
       comments : [Comment];
     };
 
@@ -55,7 +58,7 @@ actor {
         name = book.name;
         description = book.description;
         proposer = p;
-        var thumbUp = 0;
+        var votes = 0;
         var comments = commentMap.empty<Comment>();
       };
 
@@ -63,13 +66,13 @@ actor {
       newBook
     };
 
-    public func toReturnedBookType(book : Book) : BookResult {
+    public func toBookResult(book : Book) : BookResult {
       {
         id = book.id;
         name = book.name;
         description = book.description;
         proposer = book.proposer;
-        thumbUp = book.thumbUp;
+        votes = book.votes;
         comments = Iter.toArray(commentMap.vals(book.comments));
       };
     };
@@ -78,6 +81,7 @@ actor {
       #ByName : Text;
       #ByDescription : Text;
       #ByProposer: Principal;
+      // Could add more filters like 
     };
 
     public func filterBooks(filter : FilterBy) : Result<[BookResult], Text> {
@@ -85,19 +89,19 @@ actor {
         switch filter {
           case (#ByName(name)) {
             if (Text.contains(val.name, #text name))
-              return ?BookModule.toReturnedBookType(val)
+              return ?toBookResult(val)
             else
               return null
           };
           case (#ByDescription(description)) {
             if (Text.contains(val.description, #text description))
-              return ?BookModule.toReturnedBookType(val)
+              return ?toBookResult(val)
             else
               return null
           };
           case (#ByProposer(principal)) {
             if (val.proposer == principal)
-              return ?BookModule.toReturnedBookType(val)
+              return ?toBookResult(val)
             else
               return null
           };
@@ -118,19 +122,59 @@ actor {
   var users : Map.Map<Principal, User> = userMap.empty<User>();
 
   let bookSet = Set.Make<Nat>(Nat.compare);
+  
+  let progressMap = Map.Make<Nat>(Nat.compare);
 
   module UserModule {
-    public type User = {
-      principal : Principal;
-      var proposedbooks : Set.Set<Nat>;
+    public type ReadingProgress = {
+      bookId : Nat;
+      progress : Nat8;
     };
 
-    public func initializeUser(p : Principal) : User {
-      {
-        principal = p;
-        var proposedbooks = bookSet.empty();
+    public type User = {
+      principal : Principal;
+      var proposedBooks : Set.Set<Nat>;
+      var progressTracking : Map.Map<Nat, Nat8>;
+    };
+
+    public type UserResult = {
+      principal : Principal;
+      proposedBooks : [Nat];
+      progressTracking : [ReadingProgress];
+    };
+
+    public func getOrInitializeUser(principal : Principal) : User {
+      switch(userMap.get(users, principal)) {
+        case null {
+          {
+            principal = principal;
+            var proposedBooks = bookSet.empty();
+            var progressTracking = progressMap.empty<Nat8>();
+          }
+        };
+        case (?user){
+          user
+        };
       }
     };
+
+    public func toUserResult(user : User) : UserResult {
+      func filter(key : Nat, val : Nat8) : ReadingProgress {
+        {
+          bookId = key;
+          progress = val;
+        }
+      };
+
+      // Should we store ReadingProgress type instead of the progress Nat8 in User.progressTracking?
+      // It would save the map here.
+      let resMap = progressMap.map(user.progressTracking, filter);
+      {
+        principal = user.principal;
+        proposedBooks = Iter.toArray(bookSet.vals(user.proposedBooks));
+        progressTracking = Iter.toArray(progressMap.vals(resMap));
+      }
+    }
   };
 
   var nextCommentID : Nat = 0;
@@ -161,7 +205,6 @@ actor {
     };
   };
 
-  // dfx canister call bkyz2-fmaaa-aaaaa-qaaaq-cai proposeBook '(record {name="My book"; description="This is my favourite book."})'
   public shared ({ caller }) func proposeBook(book : ProposeBook) : async Result<Nat, Text>{
     if (Principal.isAnonymous(caller)) {
       return #err("An anonymous user is not allowed to propose.");
@@ -172,15 +215,8 @@ actor {
     books := bookMap.put(books, newBook.id, newBook);
 
     // Register user.
-    let user = switch(userMap.get(users, caller)) {
-      case null {
-        UserModule.initializeUser(caller)
-      };
-      case (?user){
-        user
-      };
-    };
-    user.proposedbooks := bookSet.put(user.proposedbooks, newBook.id);
+    let user = UserModule.getOrInitializeUser(caller);
+    user.proposedBooks := bookSet.put(user.proposedBooks, newBook.id);
     users := userMap.put(users, caller, user);
 
     #ok(newBook.id)
@@ -189,7 +225,7 @@ actor {
   public query func getBookById(id : Nat) : async Result<BookResult, Text> {
     switch(bookMap.get(books, id)) {
       case null #err("Book with id " # Nat.toText(id) # " does not exist.");
-      case (?book) #ok(BookModule.toReturnedBookType(book));
+      case (?book) #ok(BookModule.toBookResult(book));
     }
   };
 
@@ -215,7 +251,7 @@ actor {
       case (?book) {
         // TODO: Check if the caller has already voted.
         // Also support unvote.
-        book.thumbUp += 1;
+        book.votes += 1;
         #ok(true)
       };
     };
@@ -229,6 +265,23 @@ actor {
     let ?book = bookMap.get(books, comment.bookId) else return #err("Book with id " # Nat.toText(comment.bookId) # " does not exist.");
     let newComment = CommentModule.initializeComment(comment, caller);
     book.comments := commentMap.put(book.comments, newComment.id, newComment);
+
+    #ok(true)
+  };
+
+  public query func getUserByPrincipal(principal : Principal) : async Result<UserResult, Text> {
+    // Now everyone can check any user information, we can add the check easily if it's necessary.
+    let ?user = userMap.get(users, principal) else return #err("User with principal " # Principal.toText(principal) # " does not exist.");
+    #ok(UserModule.toUserResult(user))
+  };
+
+  public shared ({ caller }) func updateReadingProgressOnBook(progress : ReadingProgress) : async Result<Bool, Text> {
+    if (Principal.isAnonymous(caller)) {
+      return #err("An anonymous user is not allowed to update reading progress.");
+    };
+
+    let user = UserModule.getOrInitializeUser(caller);
+    user.progressTracking := progressMap.put(user.progressTracking, progress.bookId, progress.progress);
 
     #ok(true)
   };
