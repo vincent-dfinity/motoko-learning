@@ -3,6 +3,10 @@
     "leetcode_challenges_backend": {
       "main": "src/leetcode_challenges_backend/main.mo",
       "type": "motoko"
+    },
+    "leetcode_challenges_test": {
+      "main": "src/leetcode_challenges_backend/test.mo",
+      "type": "motoko"
     }
   },
   "defaults": {
