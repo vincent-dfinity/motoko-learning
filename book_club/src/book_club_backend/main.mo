@@ -76,32 +76,32 @@ actor {
     };
 
     public type FilterBy = {
-      #All;
-      #ByName : Text;
-      #ByDescription : Text;
-      #ByProposer : Principal;
-      #ByVotes : Nat;
+      #all;
+      #byName : Text;
+      #byDescription : Text;
+      #byProposer : Principal;
+      #byVotes : Nat;
     };
 
     public func filterBooks(filter : FilterBy) : Result<[BookResult], Text> {
       func bookFilter(_key : Nat, val : Book) : ?BookResult {
         switch filter {
-          case (#All) {
-            return ?toBookResult(val);
+          case (#all) {
+            ?toBookResult(val);
           };
-          case (#ByName(name)) {
+          case (#byName(name)) {
             // Trim in the future.
-            if (Text.contains(val.name, #text name)) return ?toBookResult(val) else return null;
+            if (Text.contains(val.name, #text name)) ?toBookResult(val) else null;
           };
-          case (#ByDescription(description)) {
+          case (#byDescription(description)) {
             // Trim in the future.
-            if (Text.contains(val.description, #text description)) return ?toBookResult(val) else return null;
+            if (Text.contains(val.description, #text description)) ?toBookResult(val) else null;
           };
-          case (#ByProposer(principal)) {
-            if (val.proposer == principal) return ?toBookResult(val) else return null;
+          case (#byProposer(principal)) {
+            if (val.proposer == principal) ?toBookResult(val) else null;
           };
-          case (#ByVotes(votes)) {
-            if (val.votes >= votes) return ?toBookResult(val) else return null;
+          case (#byVotes(votes)) {
+            if (val.votes >= votes) ?toBookResult(val) else null;
           };
         };
       };
@@ -131,8 +131,8 @@ actor {
       principal : Principal;
       var proposedBooks : Set.Set<Nat>;
       var votedBooks : Set.Set<Nat>;
-      var progressTracking : Map.Map<Nat, Nat8>;
-      // Could track all comments in the future.
+      var progressTracking : Map.Map<Nat, ReadingProgress>;
+      // Track all comments in the future.
     };
 
     public type UserResult = {
@@ -149,7 +149,7 @@ actor {
             principal = principal;
             var proposedBooks = bookSet.empty();
             var votedBooks = bookSet.empty();
-            var progressTracking = natMap.empty<Nat8>();
+            var progressTracking = natMap.empty<ReadingProgress>();
           };
         };
         case (?user) {
@@ -159,21 +159,11 @@ actor {
     };
 
     public func toUserResult(user : User) : UserResult {
-      func filter(key : Nat, val : Nat8) : ReadingProgress {
-        {
-          bookId = key;
-          progress = val;
-        };
-      };
-
-      // Should we store ReadingProgress type instead of the progress Nat8 in User.progressTracking?
-      // It would save the map here.
-      let resMap = natMap.map(user.progressTracking, filter);
       {
         principal = user.principal;
         proposedBooks = Iter.toArray(bookSet.vals(user.proposedBooks));
         votedBooks = Iter.toArray(bookSet.vals(user.votedBooks));
-        progressTracking = Iter.toArray(natMap.vals(resMap));
+        progressTracking = Iter.toArray(natMap.vals(user.progressTracking));
       };
     };
   };
@@ -230,23 +220,23 @@ actor {
   };
 
   public query func getAllBooks() : async Result<[BookResult], Text> {
-    BookModule.filterBooks(#All);
+    BookModule.filterBooks(#all);
   };
 
   public query func getBooksByName(name : Text) : async Result<[BookResult], Text> {
-    BookModule.filterBooks(#ByName(name));
+    BookModule.filterBooks(#byName(name));
   };
 
   public query func getBooksByDescription(description : Text) : async Result<[BookResult], Text> {
-    BookModule.filterBooks(#ByDescription(description));
+    BookModule.filterBooks(#byDescription(description));
   };
 
   public query func getBooksByProposer(proposer : Principal) : async Result<[BookResult], Text> {
-    BookModule.filterBooks(#ByProposer(proposer));
+    BookModule.filterBooks(#byProposer(proposer));
   };
 
   public query func getBooksByVotes(votes : Nat) : async Result<[BookResult], Text> {
-    BookModule.filterBooks(#ByVotes(votes));
+    BookModule.filterBooks(#byVotes(votes));
   };
 
   public shared ({ caller }) func voteOnBook(bookId : Nat) : async Result<(), Text> {
@@ -313,7 +303,7 @@ actor {
     };
 
     let user = UserModule.getOrInitializeUser(caller);
-    user.progressTracking := natMap.put(user.progressTracking, progress.bookId, progress.progress);
+    user.progressTracking := natMap.put(user.progressTracking, progress.bookId, progress);
 
     #ok();
   };
