@@ -20,4 +20,17 @@ actor Test {
     assert( (await Solution.rotateList(array, 5)) == array);
     assert( (await Solution.rotateList(array, 6)) == array_k1);
   };
+
+  public func testTrie() : async () {
+    let str = "abcd";
+    ignore (await Solution.insert(str));
+
+    assert( (await Solution.search(str)) == #ok(true));
+    assert( (await Solution.search("abc")) == #ok(false));
+    assert( (await Solution.search("abcde")) == #ok(false));
+
+    assert( (await Solution.startsWith(str)) == #ok(true));
+    assert( (await Solution.startsWith("abc")) == #ok(true));
+    assert( (await Solution.search("abcde")) == #ok(false));
+  };
 };
