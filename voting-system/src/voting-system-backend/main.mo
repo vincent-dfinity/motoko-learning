@@ -6,12 +6,15 @@ import Map "mo:base/OrderedMap";
 import Nat "mo:base/Nat";
 import Principal "mo:base/Principal";
 import Set "mo:base/OrderedSet";
+import Float "mo:base/Float";
 
 actor {
   type Poll = PollModule.Poll;
   type PollOption = PollModule.PollOption;
   type CreateYesOrNoPoll = PollModule.CreateYesOrNoPoll;
+  type CreatePoll = PollModule.CreatePoll;
   type PollResult = PollModule.PollResult;
+  type PollStatistics = PollModule.PollStatistics;
 
   type User = UserModule.User;
 
@@ -62,6 +65,22 @@ actor {
       active : Bool
     };
 
+    public type PollOptionStatistics = {
+      option : Text;
+      votes : Nat;
+      percentage : Float
+    };
+
+    public type PollStatistics = {
+      id : Nat;
+      owner : Principal;
+      title : Text;
+      description : Text;
+      votesInTotal : Nat;
+      options : [PollOptionStatistics];
+      active : Bool
+    };
+
     public func initializePoll(owner : Principal, poll : CreatePoll) : Poll {
       let options = Array.map<Text, PollOption>(
         poll.options,
@@ -102,6 +121,34 @@ actor {
         owner = poll.owner;
         title = poll.title;
         description = poll.description;
+        options;
+        active = poll.active
+      }
+    };
+
+    public func toPollStatistics(poll : Poll) : PollStatistics {
+      var votesInTotal = 0;
+      for (pollOption in poll.options.vals()) {
+        votesInTotal += pollOption.votes
+      };
+
+      let options = Array.map<PollOption, PollOptionStatistics>(
+        poll.options,
+        func pollOption {
+          {
+            option = pollOption.option;
+            votes = pollOption.votes;
+            percentage = if (votesInTotal == 0) 0 else Float.fromInt(pollOption.votes) / Float.fromInt(votesInTotal) * 100
+          }
+        }
+      );
+
+      {
+        id = poll.id;
+        owner = poll.owner;
+        title = poll.title;
+        description = poll.description;
+        votesInTotal;
         options;
         active = poll.active
       }
@@ -212,6 +259,10 @@ actor {
   };
 
   public query func getPoll(id : Nat) : async PollResult {
+    // Can add access control in the future, including:
+    // 1. normal users can only see the vote options;
+    // 2. only the owner can get the votes on each option.
+
     switch (natMap.get(polls, id)) {
       case null throw Error.reject("Poll with id " # Nat.toText(id) # " does not exist.");
       case (?poll) PollModule.toPollResult(poll)
@@ -219,6 +270,10 @@ actor {
   };
 
   public query func getAllPolls() : async [PollResult] {
+    // Can add access control in the future, including:
+    // 1. normal users can only see the vote options;
+    // 2. only the owner can get the votes on each option.
+
     func pollMap(_key : Nat, val : Poll) : PollResult {
       PollModule.toPollResult(val)
     };
@@ -237,8 +292,11 @@ actor {
   };
 
   public func voteOnPoll(id : Nat, index : Nat) : async Bool {
-    // For now, anyone can vote on a poll anonymously.
-    // We could extend to only allow identified users to vote, with only one vote.
+    // Can add access control in the future, including:
+    // 1. only allow identified users to vote;
+    // 2. only count each user once on an option;
+    // 3. vote on multiple options?
+    // 4. support devote or revote.
 
     let ?poll = natMap.get(polls, id) else return throw Error.reject("Poll with id " # Nat.toText(id) # " does not exist.");
     if (not poll.active) {
@@ -251,5 +309,18 @@ actor {
     poll.options[index].votes += 1;
 
     true
+  };
+
+  public shared ({ caller }) func getPollStatistics(id : Nat) : async PollStatistics {
+    if (Principal.isAnonymous(caller)) {
+      throw Error.reject("An anonymous user is not allowed to get the statistics of a poll.")
+    };
+
+    let ?poll = natMap.get(polls, id) else return throw Error.reject("Poll with id " # Nat.toText(id) # " does not exist.");
+    if (caller != poll.owner) {
+      throw Error.reject("Only the owner can get the statistics of a poll.")
+    };
+
+    PollModule.toPollStatistics(poll)
   }
 }
