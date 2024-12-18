@@ -163,6 +163,21 @@ actor {
     newPoll.id
   };
 
+  public shared ({ caller }) func createMultiChoicesPoll(poll : CreatePoll) : async Nat {
+    if (Principal.isAnonymous(caller)) {
+      throw Error.reject("An anonymous user is not allowed to create a poll.")
+    };
+
+    let newPoll = PollModule.initializePoll(caller, poll);
+    polls := natMap.put(polls, newPoll.id, newPoll);
+
+    let user = UserModule.getOrInitializeUser(caller);
+    user.polls := natSet.put(user.polls, newPoll.id);
+    users := principalMap.put(users, caller, user);
+
+    newPoll.id
+  };
+
   public shared ({ caller }) func closePoll(id : Nat) : async Bool {
     if (Principal.isAnonymous(caller)) {
       throw Error.reject("An anonymous user is not allowed to close a poll.")

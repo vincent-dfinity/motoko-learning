@@ -13,3 +13,5 @@ An example of a decentralized voting system in Motoko where users (Principals) c
 1. dfx canister call voting-system-backend getPollByPrincipal
 1. dfx canister call voting-system-backend voteOnPoll '(0, 1)'
 1. dfx canister call voting-system-backend closePoll '0'
+1. dfx canister call voting-system-backend createMultiChoicesPoll '(record {title="My poll 2"; description="Do you agree on that the Earth is flat?"; options=vec {"yes"; "no"; "not sure"}})'
+1. dfx canister call voting-system-backend voteOnPoll '(2, 2)'
