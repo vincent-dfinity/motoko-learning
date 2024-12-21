@@ -1,4 +1,3 @@
-import Debug "mo:base/Debug";
 import Error "mo:base/Error";
 import Iter "mo:base/Iter";
 import Map "mo:base/OrderedMap";
@@ -16,7 +15,7 @@ actor class NFTCreateor(
     logo : Text;
     supplyCap : Nat;
     maxQueryBatchSize : Nat;
-    maxUpdateBatchSize : Nat;
+    maxUpdateBatchSize : Nat
   }
 ) {
   public type Token = {
@@ -36,15 +35,38 @@ actor class NFTCreateor(
     #Map : [(Text, Value)]
   };
 
-  public type MintingArgs = {
+  public type MintArg = {
     to : Principal; // Could add subaccount support in the future.
     name : Text;
     description : Text;
     logo : Text // A URL to an image.
   };
 
-  public type BurningArgs = {
+  public type BurnArg = {
+    id : Nat
+  };
+
+  public type Transaction = {
     id : Nat;
+    from : Principal;
+    to : Principal;
+    tokenId : Nat
+  };
+
+  public type TransferArg = {
+    to : Principal; // Could add subaccount support in the future.
+    tokenId : Nat
+  };
+
+  public type TransferResult = {
+    #Ok : Nat;
+    #Err : TransferError
+  };
+
+  public type TransferError = {
+    #NonExistingTokenId;
+    #InvalidRecipient;
+    #Unauthorized
   };
 
   var mintingAccount = initArgs.mintingAccount;
@@ -56,24 +78,37 @@ actor class NFTCreateor(
   let maxQueryBatchSize = initArgs.maxQueryBatchSize;
   let maxUpdateBatchSize = initArgs.maxUpdateBatchSize;
 
-  stable var nextTokenId : Nat = 0;
-  
   let textMap = Map.Make<Text>(Text.compare);
-
   let natMap = Map.Make<Nat>(Nat.compare);
+
+  stable var nextTokenId : Nat = 0;
   stable var tokens : Map.Map<Nat, Token> = natMap.empty<Token>();
 
-  private func initializeToken(mintArgs : MintingArgs) : Token {
+  stable var nextTransactioinId : Nat = 0;
+  stable var transactions : Map.Map<Nat, Transaction> = natMap.empty<Transaction>();
+
+  private func initializeToken(mintArgs : MintArg) : Token {
     let newToken = {
       id = nextTokenId;
       name = mintArgs.name;
       description = mintArgs.description;
       logo = mintArgs.logo; // Could check if it is a valid URL.
-      owner = mintArgs.to;
+      owner = mintArgs.to
     };
 
     nextTokenId += 1;
     newToken
+  };
+
+  private func initializeTransaction(from : Principal, transferArg : TransferArg) : Transaction {
+    let newTransaction = {
+      transferArg with
+      id = nextTransactioinId;
+      from
+    };
+
+    nextTransactioinId += 1;
+    newTransaction
   };
 
   public query func getMintingAccount() : async Principal {
@@ -82,11 +117,11 @@ actor class NFTCreateor(
 
   public shared ({ caller }) func setMintingAccount(principal : Principal) : async Bool {
     if (not Principal.isController(caller)) {
-      throw Error.reject("Only the controllers are allowed to set the minting account.");
+      throw Error.reject("Only the controllers are allowed to set the minting account.")
     };
 
     if (Principal.isAnonymous(principal)) {
-      throw Error.reject("The minting account cannot be anonymous.");
+      throw Error.reject("The minting account cannot be anonymous.")
     };
 
     mintingAccount := principal;
@@ -132,18 +167,29 @@ actor class NFTCreateor(
     Iter.toArray(textMap.entries(metadata))
   };
 
-  public shared ({ caller }) func mint(mintArgs : MintingArgs) : async Nat {
+  public shared ({ caller }) func mint(mintArgs : MintArg) : async Nat {
     if (caller != mintingAccount) {
-      throw Error.reject("Only the minting account is allowed to mint a NFT token.");
+      throw Error.reject("Only the minting account is allowed to mint a NFT token.")
     };
 
+    // Mint token.
     let token = initializeToken(mintArgs);
     tokens := natMap.put(tokens, token.id, token);
+
+    // Register transaction.
+    let transaction = initializeTransaction(
+      mintingAccount,
+      {
+        to = mintArgs.to;
+        tokenId = token.id
+      }
+    );
+    transactions := natMap.put(transactions, transaction.id, transaction);
 
     token.id
   };
 
-  public shared ({ caller }) func burn(burnArgs : BurningArgs) : async Bool {
+  public shared ({ caller }) func burn(burnArgs : BurnArg) : async Bool {
     if (Principal.isAnonymous(caller)) {
       throw Error.reject("An anonymous principal is not allowed to burn a token.")
     };
@@ -165,6 +211,16 @@ actor class NFTCreateor(
     let (tempTokens, _) = natMap.replace(tokens, token.id, tempToken);
     tokens := tempTokens;
 
+    // Register transaction.
+    let transaction = initializeTransaction(
+      caller,
+      {
+        to = mintingAccount;
+        tokenId = token.id
+      }
+    );
+    transactions := natMap.put(transactions, transaction.id, transaction);
+
     true
   };
 
@@ -173,7 +229,7 @@ actor class NFTCreateor(
       throw Error.reject("Exceeds the maximum query batch size " # Nat.toText(maxQueryBatchSize))
     };
 
-    Array.map<Nat, ?Token> (
+    Array.map<Nat, ?Token>(
       ids,
       func id {
         switch (natMap.get(tokens, id)) {
@@ -205,7 +261,7 @@ actor class NFTCreateor(
     var count = 0;
     for ((_key, val) in natMap.entries(tokens)) {
       if (val.owner == principal) {
-        count += 1;
+        count += 1
       }
     };
     count
@@ -216,7 +272,7 @@ actor class NFTCreateor(
       throw Error.reject("Exceeds the maximum query batch size " # Nat.toText(maxQueryBatchSize))
     };
 
-    Array.map<Nat, ?Principal> (
+    Array.map<Nat, ?Principal>(
       ids,
       func id {
         switch (natMap.get(tokens, id)) {
@@ -250,5 +306,49 @@ actor class NFTCreateor(
         }
       }
     )
+  };
+
+  public shared ({ caller }) func transfer(transferArg : TransferArg) : async ?TransferResult {
+    if (caller == mintingAccount) {
+      // Use mint instead.
+      return ? #Err(#Unauthorized)
+    };
+
+    if (transferArg.to == mintingAccount) {
+      // Use burn instead.
+      return ? #Err(#InvalidRecipient)
+    };
+
+    let ?token = natMap.get(tokens, transferArg.tokenId) else return ? #Err(#NonExistingTokenId);
+    if (caller != token.owner) {
+      return ? #Err(#Unauthorized)
+    };
+
+    // Transfer token.
+    let tempToken = { token with owner = transferArg.to };
+    let (tempTokens, _) = natMap.replace(tokens, token.id, tempToken);
+    tokens := tempTokens;
+
+    // Register transaction.
+    let transaction = initializeTransaction(caller, transferArg);
+    transactions := natMap.put(transactions, transaction.id, transaction);
+
+    ? #Ok(transaction.id)
+  };
+
+  public query func getTxLogs(ids : [Nat]) : async [?Transaction] {
+    if (ids.size() > maxQueryBatchSize) {
+      throw Error.reject("Exceeds the maximum query batch size " # Nat.toText(maxQueryBatchSize))
+    };
+
+    Array.map<Nat, ?Transaction>(
+      ids,
+      func id {
+        switch (natMap.get(transactions, id)) {
+          case null null;
+          case (?transaction) ?transaction
+        }
+      }
+    )
   }
-};
+}
