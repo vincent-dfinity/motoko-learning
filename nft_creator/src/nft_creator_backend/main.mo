@@ -1,11 +1,14 @@
+import Array "mo:base/Array";
 import Error "mo:base/Error";
 import Iter "mo:base/Iter";
 import Map "mo:base/OrderedMap";
 import Nat "mo:base/Nat";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
-import Array "mo:base/Array";
 
+/// The implementation here refers to the ICRC7 standard but only partially implements the interfaces.
+/// To avoid misunderstanding, the interfaces here are not named according to the ICRC7 standard.
+/// But you can still find the mapping, e.g. `getSymbol` -> `icrc7_symbol`.
 actor class NFTCreateor(
   initArgs : {
     mintingAccount : Principal;
@@ -169,7 +172,7 @@ actor class NFTCreateor(
 
   public shared ({ caller }) func mint(mintArgs : MintArg) : async Nat {
     if (caller != mintingAccount) {
-      throw Error.reject("Only the minting account is allowed to mint a NFT token.")
+      throw Error.reject("Only the minting account is allowed to mint an NFT token.")
     };
 
     // Mint token.
@@ -198,14 +201,15 @@ actor class NFTCreateor(
       throw Error.reject("Cannot burn with the minting account.")
     };
 
-    let ?token = natMap.get(tokens, burnArgs.id) else throw Error.reject("Poll with id " # Nat.toText(burnArgs.id) # " does not exist.");
+    let ?token = natMap.get(tokens, burnArgs.id) else throw Error.reject("Token with id " # Nat.toText(burnArgs.id) # " does not exist.");
     if (caller != token.owner) {
       throw Error.reject("Only the owner can burn this token.")
     };
 
     // Transfer token to the minting account as the buring operation.
     let tempToken = {
-      token with owner = mintingAccount
+      token with
+      owner = mintingAccount
     };
 
     let (tempTokens, _) = natMap.replace(tokens, token.id, tempToken);
@@ -292,7 +296,6 @@ actor class NFTCreateor(
       ids,
       func id {
         switch (natMap.get(tokens, id)) {
-          // Trap if the id doesn't exist, could be improved to skip the invalid ids wit Array.mapFilter.
           case null null;
           case (?token) {
             var metadata : Map.Map<Text, Value> = textMap.empty<Value>();
@@ -311,21 +314,25 @@ actor class NFTCreateor(
   public shared ({ caller }) func transfer(transferArg : TransferArg) : async ?TransferResult {
     if (caller == mintingAccount) {
       // Use mint instead.
-      return ? #Err(#Unauthorized)
+      return ?#Err(#Unauthorized)
     };
 
     if (transferArg.to == mintingAccount) {
       // Use burn instead.
-      return ? #Err(#InvalidRecipient)
+      return ?#Err(#InvalidRecipient)
     };
 
-    let ?token = natMap.get(tokens, transferArg.tokenId) else return ? #Err(#NonExistingTokenId);
+    let ?token = natMap.get(tokens, transferArg.tokenId) else return ?#Err(#NonExistingTokenId);
     if (caller != token.owner) {
-      return ? #Err(#Unauthorized)
+      return ?#Err(#Unauthorized)
     };
 
     // Transfer token.
-    let tempToken = { token with owner = transferArg.to };
+    let tempToken = {
+      token with
+      owner = transferArg.to
+    };
+
     let (tempTokens, _) = natMap.replace(tokens, token.id, tempToken);
     tokens := tempTokens;
 
@@ -333,7 +340,7 @@ actor class NFTCreateor(
     let transaction = initializeTransaction(caller, transferArg);
     transactions := natMap.put(transactions, transaction.id, transaction);
 
-    ? #Ok(transaction.id)
+    ?#Ok(transaction.id)
   };
 
   public query func getTxLogs(ids : [Nat]) : async [?Transaction] {
